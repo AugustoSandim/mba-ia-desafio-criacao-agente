@@ -45,7 +45,7 @@ Acoes que geram cobranca (reserva com taxa > 0) ou liberam acesso (autorizacao d
 1. A tool cria uma confirmacao pendente no banco (`app/database.py:criar_confirmacao`, linhas 205-218)
 2. A resposta da API inclui a lista de confirmacoes pendentes
 3. O morador responde via `POST /sessoes/{id}/confirmacoes`
-4. O handler executa a acao diretamente no codigo (`app/main.py:processar_confirmacao`, linhas 109-168), sem passar pela tool do agente
+4. O handler executa a acao diretamente no codigo (`app/main.py:processar_confirmacao`, linhas 127-187), sem passar pela tool do agente
 5. Uma mensagem de sistema e enviada ao agente para gerar a resposta final
 
 Essa abordagem evita o problema de retomada de tool call do ADK com sessao persistida — a acao e executada pelo codigo da API, nao pelo agente.
@@ -56,7 +56,7 @@ Essa abordagem evita o problema de retomada de tool call do ADK com sessao persi
 
 - **Arquivo**: `app/tools/reservas.py`, funcao `solicitar_reserva` (linhas 44-78)
 - **Arquivo**: `app/tools/visitantes.py`, funcao `solicitar_autorizacao_visitante` (linhas 21-40)
-- **Arquivo**: `app/main.py`, rota `processar_confirmacao` (linhas 109-168)
+- **Arquivo**: `app/main.py`, rota `processar_confirmacao` (linhas 127-187)
 - **Arquivo**: `app/database.py`, funcao `criar_confirmacao` (linhas 205-218)
 
 **Como funciona**: Quando `solicitar_reserva` detecta taxa > 0, ela NAO faz o INSERT na tabela de reservas — cria uma confirmacao pendente no banco e retorna uma mensagem informando o morador. Para visitantes, `solicitar_autorizacao_visitante` SEMPRE cria confirmacao pendente. A rota `POST /sessoes/{id}/confirmacoes` valida que o id pertence a sessao e esta pendente (409 caso contrario), e so entao executa o INSERT diretamente no codigo. Reservas de areas sem taxa (quadra) e cancelamentos executam imediatamente, sem confirmacao.
@@ -65,7 +65,7 @@ Essa abordagem evita o problema de retomada de tool call do ADK com sessao persi
 
 ### Garantia 2: Cada sessao pertence a um apartamento
 
-- **Arquivo**: `app/main.py`, rota `criar_sessao` (linhas 66-74) — define `state={"apartamento": req.apartamento}`
+- **Arquivo**: `app/main.py`, rota `criar_sessao` (linhas 74-82) — define `state={"apartamento": req.apartamento}`
 - **Arquivo**: `app/tools/reservas.py`, linha 17 — `tool_context.state["apartamento"]`
 - **Arquivo**: `app/tools/reservas.py`, linha 54 — `tool_context.state["apartamento"]`
 - **Arquivo**: `app/tools/reservas.py`, linha 87 — `tool_context.state["apartamento"]`
@@ -78,9 +78,9 @@ Essa abordagem evita o problema de retomada de tool call do ADK com sessao persi
 
 ### Garantia 3: Nada se perde no reinicio
 
-- **Arquivo**: `app/main.py`, linhas 39-41 — `DatabaseSessionService(db_url="sqlite+aiosqlite:///...")` para sessoes ADK
+- **Arquivo**: `app/main.py`, linhas 47-49 — `DatabaseSessionService(db_url="sqlite+aiosqlite:///...")` para sessoes ADK
 - **Arquivo**: `app/database.py`, linhas 39-45 — SQLite com WAL mode para dados da aplicacao
-- **Arquivo**: `app/main.py`, linhas 34-47 — lifespan reconecta aos bancos existentes no startup
+- **Arquivo**: `app/main.py`, linhas 42-55 — lifespan reconecta aos bancos existentes no startup
 
 **Como funciona**: O ADK usa `DatabaseSessionService` com SQLite, que persiste todas as sessoes e eventos em `data/sessions.db`. Os dados da aplicacao (reservas, visitantes, confirmacoes) ficam em `data/aurora.db`. Ambos sobrevivem ao reinicio da API.
 

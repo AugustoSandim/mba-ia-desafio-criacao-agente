@@ -129,10 +129,11 @@ async def processar_confirmacao(session_id: str, req: ConfirmacaoRequest):
     apartamento = await _verificar_sessao(session_id)
 
     conf = await obter_confirmacao(req.id, session_id)
-    if conf is None:
-        raise HTTPException(status_code=404, detail="Confirmação não encontrada")
-    if conf["status"] != "pendente":
-        raise HTTPException(status_code=409, detail="Confirmação já processada")
+    if conf is None or conf["status"] != "pendente":
+        raise HTTPException(
+            status_code=409,
+            detail="Não existe confirmação pendente com esse id nesta sessão",
+        )
 
     detalhes = json.loads(conf["detalhes"])
 
