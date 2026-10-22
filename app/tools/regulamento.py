@@ -6,6 +6,31 @@ from google.adk.tools import ToolContext
 
 REGULAMENTO_PATH = Path(__file__).resolve().parent.parent.parent / "dados" / "regulamento.md"
 
+# Termos sem valor de assunto. Sem esse filtro, palavras como "que" e "aos"
+# pontuam capítulos por coincidência e devolvem assuntos fora da pergunta.
+PALAVRAS_IRRELEVANTES = {
+    "a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "do", "da",
+    "dos", "das", "em", "no", "na", "nos", "nas", "por", "pelo", "pela",
+    "pelos", "pelas", "para", "pra", "pro", "ao", "aos", "com", "sem",
+    "sobre", "entre", "ate", "apos", "sob", "e", "ou", "mas", "porem",
+    "se", "ja", "tambem", "que", "quem", "qual", "quais", "quanto",
+    "quantos", "quantas", "como", "quando", "onde", "porque", "pois",
+    "eu", "voce", "vc", "ele", "ela", "eles", "elas", "meu", "minha",
+    "seu", "sua", "me", "te", "lhe", "lhes", "isso", "isto", "alguem",
+    "ser", "estar", "ter", "haver", "fazer", "poder", "dever", "ir", "vir",
+    "sou", "esta", "sao", "era", "foi", "foram", "ha", "tem", "tinha",
+    "posso", "pode", "podem", "devo", "deve", "devem", "quero", "quer",
+    "gostaria", "preciso", "precisa", "saber", "sei", "dizer", "falar",
+    "explicar", "ajudar", "hora", "horas", "horario", "horarios",
+    "funcionamento", "funciona", "funcionar", "abre", "fecha", "aberto",
+    "aberta", "fechado", "fechada", "disponivel", "dia", "dias",
+}
+
+# Peso de um termo achado no título do capítulo (concentra o assunto) e
+# relevância mínima para devolver o capítulo — um termo solto no conteúdo não basta.
+PESO_TITULO = 10
+LIMIAR_RELEVANCIA = 2
+
 
 def _normalizar(texto: str) -> str:
     texto = unicodedata.normalize("NFKD", texto)
@@ -26,11 +51,20 @@ def _carregar_capitulos() -> list[dict]:
     return capitulos
 
 
+def _termos_relevantes(pergunta: str) -> list[str]:
+    termos = re.findall(r"[a-z0-9]+", _normalizar(pergunta))
+    return [t for t in termos if len(t) > 2 and t not in PALAVRAS_IRRELEVANTES]
+
+
 def _pontuar_capitulo(capitulo: dict, termos: list[str]) -> int:
-    texto_normalizado = _normalizar(capitulo["conteudo"])
+    titulo = _normalizar(capitulo["titulo"])
+    conteudo = _normalizar(capitulo["conteudo"])
     score = 0
     for termo in termos:
-        score += texto_normalizado.count(termo)
+        if termo in titulo:
+            score += PESO_TITULO
+        elif termo in conteudo:
+            score += 1
     return score
 
 
@@ -41,8 +75,10 @@ async def consultar_regulamento(pergunta: str, tool_context: ToolContext) -> str
         pergunta: A pergunta ou tema sobre o regulamento que deseja consultar
     """
     capitulos = _carregar_capitulos()
-    termos = _normalizar(pergunta).split()
-    termos = [t for t in termos if len(t) > 2]
+    termos = _termos_relevantes(pergunta)
+
+    if not termos:
+        return "Não encontrei informações relevantes no regulamento para essa consulta."
 
     pontuados = []
     for cap in capitulos:
@@ -52,12 +88,8 @@ async def consultar_regulamento(pergunta: str, tool_context: ToolContext) -> str
 
     pontuados.sort(key=lambda x: x[0], reverse=True)
 
-    if not pontuados:
+    if not pontuados or pontuados[0][0] < LIMIAR_RELEVANCIA:
         return "Não encontrei informações relevantes no regulamento para essa consulta."
 
-    top = pontuados[:3]
-    trechos = []
-    for _, cap in top:
-        trechos.append(cap["conteudo"])
-
-    return "Trechos relevantes do regulamento:\n\n" + "\n\n---\n\n".join(trechos)
+    melhor = pontuados[0][1]
+    return "Trecho relevante do regulamento:\n\n" + melhor["conteudo"]
